@@ -9,40 +9,54 @@ class Stitcher:
 		self.isv3 = imutils.is_cv3()
 
 	def stitch(self, images, ratio=0.75, reprojThresh=4.0,
-		showMatches=False):
-		# unpack the images, then detect keypoints and extract
-		# local invariant descriptors from them
-		(imageB, imageA) = images
-		(kpsA, featuresA) = self.detectAndDescribe(imageA)
-		(kpsB, featuresB) = self.detectAndDescribe(imageB)
+		showMatches=False,resize = 400):
+		#copy of images
+		imgs = []
+		for image in images:
+			img = cv2.imread(image)
+			img = imutils.resize(img, width=resize)
+			imgs.append(img)
+		#keypoints
+		ks = []
+		#features
+		fs = []
+		#homographies, in the form of i+1 respect to i
+		hs = []
+		#find keypoints and features
+		for image in imgs:
+			kp,ft = self.detectAndDescribe(image)
+			ks.append(kp)
+			fs.append(ft)
 
-		# match features between the two images
-		M = self.matchKeypoints(kpsA, kpsB,
-			featuresA, featuresB, ratio, reprojThresh)
+		#calculate homographies
+		for i in range(len(imgs)-1):
+			hs.append(self.matchKeypoints(ks[i+1], ks[i],
+			fs[i+1], fs[i], ratio, reprojThresh))
 
-		# if the match is None, then there aren't enough matched
-		# keypoints to create a panorama
-		if M is None:
+		#if homographies does not exist return None
+		#(consequtive images does not contain enough matches)
+		#CHECK THIS, MIGHT BE WRONG
+		if None in hs:
 			return None
+		while len(imgs)>1:
+			print(hs[-1][1])
+			#warp the last image with respect to the second to last
+			result = cv2.warpPerspective(imgs[-1], hs[-1][1],
+			(imgs[-1].shape[1] + imgs[-2].shape[1], imgs[-1].shape[0]))
 
-		# otherwise, apply a perspective warp to stitch the images
-		# together
-		(matches, H, status) = M
-		result = cv2.warpPerspective(imageA, H,
-			(imageA.shape[1] + imageB.shape[1], imageA.shape[0]))
-		result[0:imageB.shape[0], 0:imageB.shape[1]] = imageB
+			#stich them (need better stiching algorithm)
+			result[0:imgs[-2].shape[0], 0:imgs[-2].shape[1]] = imgs[-2]
 
-		# check to see if the keypoint matches should be visualized
-		if showMatches:
-			vis = self.drawMatches(imageA, imageB, kpsA, kpsB, matches,
-				status)
+			#remove the last elements of all the lists
+			ks.pop()
+			fs.pop()
+			hs.pop()
+			imgs.pop()
+			imgs.pop()
+			imgs.append(result)
 
-			# return a tuple of the stitched image and the
-			# visualization
-			return (result, vis)
-
-		# return the stitched image
 		return result
+		
 
 	def detectAndDescribe(self, image):
 		# convert the image to grayscale
