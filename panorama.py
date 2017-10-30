@@ -4,188 +4,16 @@ import imutils
 import cv2
 from copy import*
 
-#----------------------------------------------------------------------------
-#-----------------------------TO-DO------------------------------------------
-#-----------Find out why the offset translation cause a HUGE   --------------
-#-----------mis-stiching of the images, the problem is probably -------------
-#-----------due to perspective transformation, EROR_FORWARD_CARRYING --------
-#----------------------------------------------------------------------------
-#----------------------------------------------------------------------------
-#SOLUTION: KEEP TRACK OF LINEAR TRANSLATION SEPERATELY
+#TO-DO: FIND THE REASON WHY IT DOESNT WORK FOR PERSPECTIVE TRANFORMATION (CHECK BOUNDING RECT)
+#       FIX COMBINING ALGORITHM
 
 class Stitcher:
 	def __init__(self):
 		# determine if we are using OpenCV v3.X
 		self.isv3 = imutils.is_cv3()
-	def stitchLeftToRight(self, images, ratio=0.75, reprojThresh=4.0,
-		showMatches=False,resize = 400):
-		#copy of images
-		imgs = []
-		for image in images:
-			img = cv2.imread(image)
-			img = imutils.resize(img, width=resize)
-			imgs.append(img)
-		#keypoints
-		ks = []
-		#features
-		fs = []
-		#homographies, in the form of i+1 respect to i
-		hs = []
-		#find keypoints and features
-		for image in imgs:
-			kp,ft = self.detectAndDescribe(image)
-			ks.append(kp)
-			fs.append(ft)
-
-		#calculate homographies
-		for i in range(len(imgs)-1):
-			hs.append(self.matchKeypoints(ks[i+1], ks[i],
-			fs[i+1], fs[i], ratio, reprojThresh))
-
-		#if homographies does not exist return None
-		#(consequtive images does not contain enough matches)
-		#CHECK THIS, MIGHT BE WRONG
-		if None in hs:
-			return None
-		while len(imgs)>1:
-			print(hs[-1][1])
-			#warp the last image with respect to the second to last
-			result = cv2.warpPerspective(imgs[-1], hs[-1][1],
-			(imgs[-1].shape[1] + imgs[-2].shape[1], imgs[-1].shape[0]))
-
-			#stich them (need better stiching algorithm)
-			result[0:imgs[-2].shape[0], 0:imgs[-2].shape[1]] = imgs[-2]
-
-			#remove the last elements of all the lists
-			ks.pop()
-			fs.pop()
-			hs.pop()
-			imgs.pop()
-			imgs.pop()
-			imgs.append(result)
-
-		return result
-
-	def stitch(self, images, ratio=0.75, reprojThresh=4.0,
-		showMatches=False,resize = 400):
-		#copy of images
-		imgs = []
-		for image in images:
-			img = cv2.imread(image)
-			if resize is not None:
-				img = imutils.resize(img, width=resize)
-			imgs.append(img)
-		globalXOffset = 0
-		globalYOffset = 0
-		#keypoints
-		ks = []
-		#features
-		fs = []
-		#homographies, in the form of i+1 respect to i
-		hs = []
-		#find keypoints and features
-		for image in imgs:
-			kp,ft = self.detectAndDescribe(image)
-			ks.append(kp)
-			fs.append(ft)
-
-		#calculate homographies
-		for i in range(len(imgs)-1):
-			hs.append(self.matchKeypoints(ks[i+1], ks[i],
-			fs[i+1], fs[i], ratio, reprojThresh))
-
-		#if homographies does not exist return None
-		#(consequtive images does not contain enough matches)
-		#CHECK THIS, MIGHT BE WRONG
-		if None in hs:
-			return None
-			
-
-		print(self.calcBoundingRect(imgs,hs))
-
-		while len(imgs)>1:
-
-			#warp the last image with respect to the second to last
-
-			#calculate corner positions of the last image
-			w,h = (imgs[-1].shape[1],imgs[-1].shape[0])
-			lt = hs[-1][1].dot(np.array([0, 0, 1]))
-			lb = hs[-1][1].dot(np.array([0, h,1]))
-			rt = hs[-1][1].dot(np.array([w, 0, 1]))
-			rb = hs[-1][1].dot(np.array([w, h,1]))
-
-			#If the image is to the left or to the top
-			#translate it accordingly
-			print(lt,lb)
-			xOffset = int(min(lt[0],lb[0]))
-			yOffset = int(min(lt[1],rt[1]))
-
-			if xOffset < 0:
-				hs[-1][1][0][2] -= xOffset
-
-			if yOffset < 0:
-				hs[-1][1][1][2] -= yOffset
-
-
-			#get the bounding rectangle of the two images
-			rect = self.getBoundingRect(0,0,imgs[-2].shape[1],imgs[-2].shape[0],
-									xOffset,yOffset,imgs[-1].shape[1],imgs[-1].shape[0]) 
-
-			#warpPerspective BURDAKI OPENCV FUNCTIONINI DEGISTIRDIM HULOOO
-			result = self.warp_perspective(imgs[-1], hs[-1][1],
-			(rect[2]-rect[0], rect[3]-rect[1]),(xOffset,yOffset))
-			cv2.imshow('result'+str(len(imgs)),result)
-			cv2.imshow('im1',imgs[-1])
-			cv2.imshow('im2',imgs[-2])
-
-			#if the_offset is positive the warpPerspective function takes
-			#care of the translation, so no additional off_set is needed
-			
-			if xOffset>0:
-				xOffset = 0
-			if yOffset>0:
-				yOffset = 0
-
-			"""
-			#add borders to the result so that the second image can be added to the first
-			result=cv2.copyMakeBorder(result, top=0,
-			 bottom=self.negToZero(rect[3]-rect[1]-result.shape[0]),
-			 left=0,
-			 right=self.negToZero(rect[2]-rect[0]-result.shape[1]),
-			 borderType= cv2.BORDER_CONSTANT,
-			 value=[0,0,0])
-			"""
-
-			#stich them
-			result[-(yOffset):-(yOffset)+imgs[-2].shape[0],
-			    -(xOffset):-(xOffset)+imgs[-2].shape[1]] = imgs[-2]
-
-
-			#account for the offset we added to the images
-			globalYOffset += xOffset
-			globalXOffset += yOffset 
-			
-			for i in range(len(hs)):
-				hs[i][1][0][2] += xOffset
-				hs[i][1][1][2] += yOffset
-
-			#for i in range(len(hs)):
-			#	hs[i][1][0][2] += -hs[i][1][0][0]*xOffset - hs[i][1][0][1]*yOffset
-			#	hs[i][1][1][2] += -hs[i][1][1][0]*xOffset - hs[i][1][1][1]*yOffset
-				
-
-			#remove the last elements of all the lists
-			ks.pop()
-			fs.pop()
-			hs.pop()
-			imgs.pop()
-			imgs.pop()
-			imgs.append(result)
-
-		return result
 
 	#DOESNT WORK WITH PERSPECTIVE
-	def stitch2(self, images, ratio=0.75, reprojThresh=4.0,
+	def stitch(self, images, ratio=0.75, reprojThresh=4.0,
 		showMatches=False,resize = 400):
 		#copy of images
 		imgs = []
@@ -213,80 +41,40 @@ class Stitcher:
 			hs.append((self.matchKeypoints(ks[i+1], ks[i],
 			fs[i+1], fs[i], ratio, reprojThresh))[1])
 
-		#if homographies does not exist return None
-		#(consequtive images does not contain enough matches)
-		#CHECK THIS, MIGHT BE WRONG
-		#if all(hs[1]):
-		#	return None
-		
-
-		#print(self.calcBoundingRect(imgs,hs))
-
 		lt,rb = self.calcBoundingRect(imgs,hs)
 
 		xOffset, yOffset = int(lt[0]),int(lt[1])
 		w,h = int(rb[0])-xOffset, int(rb[1])-yOffset
-		#print(xOffset,yOffset,w,h)
 
-		#ADD HOMOGRAPHY IDENTITY AS THE FIRST MATRIX IN THE LIST
-		
+		#create empty image of appropriate size		
 		main = np.zeros((h,w,3), np.uint8)
+
+		#add identity matrix as the first homography matrix
 		hs.insert(0,np.identity(3))
-
-		#translate
-		for i in range(len(hs)):
-			print('baban')
-			print(hs[i])
-			#hs[i][0][2] += -xOffset
-			#hs[i][1][2] += -yOffset
-			print(hs[i])
-
-
-		#calculate global homographies
-		#for i in range(len(hs)):
-		#	for j in range(i):
-		#		hs[i] = hs[i].dot(hs[j])
-
+		
+		#instantiate base homography matrix
 		homography = np.identity(3)
 
 		for i in range(len(imgs)):
+			#update base homography matrix
 			homography = homography.dot(hs[i])
-			#warpPerspective
+
+			#create a copy of the base homography matrix to
+			#translate it without affecting the other homographies
 			hTranslated = deepcopy(homography)
 			hTranslated[0][2] += -xOffset
 			hTranslated[1][2] += -yOffset
+
+			#warpPerspective
 			result = cv2.warpPerspective(imgs[i], hTranslated,
 			(w, h))
 			cv2.imshow('result'+str(i),result)
 			cv2.imshow('im1',imgs[-1])
 			cv2.imshow('im2',imgs[-2])
 
-			#grayR = cv2.cvtColor(result,cv2.COLOR_BGR2GRAY)
-			#retR, maskR = cv2.threshold(grayR, 10, 255, cv2.THRESH_BINARY)
-
-			#grayM = cv2.cvtColor(main,cv2.COLOR_BGR2GRAY)
-			#retM, maskM = cv2.threshold(grayM, 10, 255, cv2.THRESH_BINARY_INV)
-			#cv2.imshow('maskM'+str(i),maskM)
-
-			#maskedR = cv2.bitwise_and(main,maskM)
-			#grayM = cv2.cvtColor(main,cv2.COLOR_BGR2GRAY)
-
-			#binor = cv2.bitwise_or(grayM,grayR)
-			#masked = cv2.bitwise_and(main,result,mask = mask)
-			#cv2.imshow('orred',binor)
-			#cv2.imshow('maskM'+str(i),maskM)
-
 			#stich them
 			main = cv2.bitwise_or(main,result)
 
-			#homography = homography.dot(hs[i][1])
-			
-			#for i in range(len(hs)):
-			#	hs[i][1][0][2] += -hs[i][1][0][0]*xOffset - hs[i][1][0][1]*yOffset
-			#	hs[i][1][1][2] += -hs[i][1][1][0]*xOffset - hs[i][1][1][1]*yOffset
-				
-
-			#remove the last elements of all the lists
 		cv2.imshow('main',main)
 		return result
 
@@ -395,89 +183,3 @@ class Stitcher:
 		lt,rb = ((min(points,key = lambda t: t[0])[0],min(points,key = lambda t: t[1])[1]),
 				(max(points,key = lambda t: t[0])[0],max(points,key = lambda t: t[1])[1]))
 		return (lt,rb)
-
-	def warp_perspective(self,src, M, (width, height), (origin_x, origin_y),
-	                     flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT,
-	                     borderValue=0, dst=None):
-	    """
-	    Implementation in Python using base code from
-	    http://stackoverflow.com/questions/4279008/specify-an-origin-to-warpperspective-function-in-opencv-2-x
-
-	    Note there is an issue with linear interpolation.
-	    """
-	    B_SIZE = 32
-
-	    if dst == None:
-	        dst = np.zeros((height, width, 3), dtype=src.dtype)
-
-	    # Set interpolation mode.
-	    interpolation = flags & cv2.INTER_MAX
-	    if interpolation == cv2.INTER_AREA:
-	        raise Exception('Area interpolation is not supported!')
-
-	    # Prepare matrix.    
-	    M = M.astype(np.float64)
-	    if not(flags & cv2.WARP_INVERSE_MAP):
-	        M = cv2.invert(M)[1]
-	    M = M.flatten()
-
-	    x_dst = y_dst = 0
-	    for y in xrange(-origin_y, height, B_SIZE):
-	        for x in xrange(-origin_x, width, B_SIZE):
-
-	            print (x, y)
-
-	            # Block dimensions.
-	            bw = min(B_SIZE, width - x_dst)
-	            bh = min(B_SIZE, height - y_dst)
-
-	            # To avoid dimension errors.
-	            if bw <= 0 or bh <= 0:
-	                break
-
-	            # View of the destination array.
-	            dpart = dst[y_dst:y_dst+bh, x_dst:x_dst+bw]
-
-	            # Original code used view of array here, but we're using numpy array's.
-	            XY = np.zeros((bh, bw, 2), dtype=np.int16)
-	            A = np.zeros((bh, bw), dtype=np.uint16)
-
-	            for y1 in xrange(bh):
-	                X0 = M[0]*x + M[1]*(y + y1) + M[2]
-	                Y0 = M[3]*x + M[4]*(y + y1) + M[5]
-	                W0 = M[6]*x + M[7]*(y + y1) + M[8]
-
-	                if interpolation == cv2.INTER_NEAREST:
-	                    for x1 in xrange(bw):
-	                        W = np.float64(W0 + M[6]*x1);
-	                        if W != 0:
-	                            W = np.float64(1.0)/W
-
-	                        X = np.int32((X0 + M[0]*x1)*W)
-	                        Y = np.int32((Y0 + M[3]*x1)*W)
-	                        XY[y1, x1][0] = np.int16(X)
-	                        XY[y1, x1][1] = np.int16(Y)
-	                else:
-	                    for x1 in xrange(bw):
-	                        W = np.float64(W0 + M[6]*x1);
-	                        if W != 0:
-	                            W = cv2.INTER_TAB_SIZE/W
-
-	                        X = np.int32((X0 + M[0]*x1)*W)
-	                        Y = np.int32((Y0 + M[3]*x1)*W)
-	                        XY[y1, x1][0] = np.int16((X >> cv2.INTER_BITS) + origin_x)
-	                        XY[y1, x1][1] = np.int16((Y >> cv2.INTER_BITS) + origin_y)
-	                        A[y1, x1] = np.int16(((Y & (cv2.INTER_TAB_SIZE-1))*cv2.INTER_TAB_SIZE + (X & (cv2.INTER_TAB_SIZE-1))))
-
-	            if interpolation == cv2.INTER_NEAREST:
-	                cv2.remap(src, XY, None, interpolation, dst=dpart,
-	                          borderMode=borderMode, borderValue=borderValue)
-	            else:
-	                cv2.remap(src, XY, A, interpolation, dst=dpart,
-	                          borderMode=borderMode, borderValue=borderValue)
-
-	            x_dst += B_SIZE
-	        x_dst = 0
-	        y_dst += B_SIZE
-
-
