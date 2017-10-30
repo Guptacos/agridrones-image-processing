@@ -72,8 +72,15 @@ class Stitcher:
 			cv2.imshow('im1',imgs[-1])
 			cv2.imshow('im2',imgs[-2])
 
-			#stich them
-			main = cv2.bitwise_or(main,result)
+			#stich them with masking
+			anded = cv2.bitwise_and(result,main)
+			gray = cv2.cvtColor(anded, cv2.COLOR_BGR2GRAY)
+			ret,binary = cv2.threshold(gray,1,255,cv2.THRESH_BINARY_INV)
+			binary = cv2.cvtColor(binary,cv2.COLOR_GRAY2RGB)
+			maskedMain = cv2.bitwise_and(main,binary)
+			cv2.imshow('bin',maskedMain)
+
+			main = cv2.bitwise_or(maskedMain,result)
 
 		cv2.imshow('main',main)
 		return result

@@ -18,6 +18,6 @@ diagonalRightLeft = ['test_images/b3.jpg','test_images/b2.jpg','test_images/b1.j
 
 two = ['test_images/halfdome-03.png','test_images/halfdome-02.png']
 
-res = stitcher.stitch(perspective)
+res = stitcher.stitch(affine)
 cv2.imshow('baban',res)
 cv2.waitKey(0)
