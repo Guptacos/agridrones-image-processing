@@ -2,6 +2,7 @@
 import numpy as np
 import imutils
 import cv2
+from copy import*
 
 #----------------------------------------------------------------------------
 #-----------------------------TO-DO------------------------------------------
@@ -64,7 +65,7 @@ class Stitcher:
 			imgs.append(result)
 
 		return result
-		
+
 	def stitch(self, images, ratio=0.75, reprojThresh=4.0,
 		showMatches=False,resize = 400):
 		#copy of images
@@ -183,6 +184,7 @@ class Stitcher:
 
 		return result
 
+	#DOESNT WORK WITH PERSPECTIVE
 	def stitch2(self, images, ratio=0.75, reprojThresh=4.0,
 		showMatches=False,resize = 400):
 		#copy of images
@@ -208,10 +210,9 @@ class Stitcher:
 
 		#calculate homographies
 		for i in range(len(imgs)-1):
-			hs.append(self.matchKeypoints(ks[i+1], ks[i],
-			fs[i+1], fs[i], ratio, reprojThresh))
-		#first homography matrix
-		homography = np.identity(3)
+			hs.append((self.matchKeypoints(ks[i+1], ks[i],
+			fs[i+1], fs[i], ratio, reprojThresh))[1])
+
 		#if homographies does not exist return None
 		#(consequtive images does not contain enough matches)
 		#CHECK THIS, MIGHT BE WRONG
@@ -219,55 +220,67 @@ class Stitcher:
 		#	return None
 		
 
-		print(self.calcBoundingRect(imgs,hs))
+		#print(self.calcBoundingRect(imgs,hs))
 
 		lt,rb = self.calcBoundingRect(imgs,hs)
 
 		xOffset, yOffset = int(lt[0]),int(lt[1])
 		w,h = int(rb[0])-xOffset, int(rb[1])-yOffset
-		print(xOffset,yOffset,w,h)
+		#print(xOffset,yOffset,w,h)
 
-		main = cv2.warpPerspective(imgs[0], homography,
-			(w, h))
+		#ADD HOMOGRAPHY IDENTITY AS THE FIRST MATRIX IN THE LIST
+		
+		main = np.zeros((h,w,3), np.uint8)
+		hs.insert(0,np.identity(3))
+
+		#translate
+		for i in range(len(hs)):
+			print('baban')
+			print(hs[i])
+			#hs[i][0][2] += -xOffset
+			#hs[i][1][2] += -yOffset
+			print(hs[i])
+
+
+		#calculate global homographies
+		#for i in range(len(hs)):
+		#	for j in range(i):
+		#		hs[i] = hs[i].dot(hs[j])
+
+		homography = np.identity(3)
 
 		for i in range(len(imgs)):
-
-			if xOffset < 0:
-				hs[0][1][0][2] += -xOffset
-
-			if yOffset < 0:
-				hs[0][1][1][2] += -yOffset
-
-
+			homography = homography.dot(hs[i])
 			#warpPerspective
-			print(homography)
-			result = cv2.warpPerspective(imgs[i], homography,
+			hTranslated = deepcopy(homography)
+			hTranslated[0][2] += -xOffset
+			hTranslated[1][2] += -yOffset
+			result = cv2.warpPerspective(imgs[i], hTranslated,
 			(w, h))
 			cv2.imshow('result'+str(i),result)
 			cv2.imshow('im1',imgs[-1])
 			cv2.imshow('im2',imgs[-2])
 
-			grayR = cv2.cvtColor(result,cv2.COLOR_BGR2GRAY)
-			retR, maskR = cv2.threshold(grayR, 10, 255, cv2.THRESH_BINARY)
+			#grayR = cv2.cvtColor(result,cv2.COLOR_BGR2GRAY)
+			#retR, maskR = cv2.threshold(grayR, 10, 255, cv2.THRESH_BINARY)
 
-			grayM = cv2.cvtColor(main,cv2.COLOR_BGR2GRAY)
-			retM, maskM = cv2.threshold(grayM, 10, 255, cv2.THRESH_BINARY_INV)
-			cv2.imshow('maskM'+str(i),maskM)
-
-			maskedR = cv2.bitwise_and(main,maskM)
-
-
-			#masked = cv2.bitwise_and(main,result,mask = mask)
-			cv2.imshow('maskedR'+str(i),maskR)
+			#grayM = cv2.cvtColor(main,cv2.COLOR_BGR2GRAY)
+			#retM, maskM = cv2.threshold(grayM, 10, 255, cv2.THRESH_BINARY_INV)
 			#cv2.imshow('maskM'+str(i),maskM)
 
+			#maskedR = cv2.bitwise_and(main,maskM)
+			#grayM = cv2.cvtColor(main,cv2.COLOR_BGR2GRAY)
 
+			#binor = cv2.bitwise_or(grayM,grayR)
+			#masked = cv2.bitwise_and(main,result,mask = mask)
+			#cv2.imshow('orred',binor)
+			#cv2.imshow('maskM'+str(i),maskM)
 
 			#stich them
 			main = cv2.bitwise_or(main,result)
 
-			if i < len(hs):
-				homography = homography.dot(hs[i][1])
+			#homography = homography.dot(hs[i][1])
+			
 			#for i in range(len(hs)):
 			#	hs[i][1][0][2] += -hs[i][1][0][0]*xOffset - hs[i][1][0][1]*yOffset
 			#	hs[i][1][1][2] += -hs[i][1][1][0]*xOffset - hs[i][1][1][1]*yOffset
@@ -378,7 +391,7 @@ class Stitcher:
 			rb = h.dot(np.array([width, height,1]))
 			points.extend([lt,lb,rt,rb])
 			if i < len(imgs)-1:
-				h = h.dot(hs[i][1])
+				h = h.dot(hs[i])
 		lt,rb = ((min(points,key = lambda t: t[0])[0],min(points,key = lambda t: t[1])[1]),
 				(max(points,key = lambda t: t[0])[0],max(points,key = lambda t: t[1])[1]))
 		return (lt,rb)
