@@ -68,9 +68,9 @@ class Stitcher:
 			#warpPerspective
 			result = cv2.warpPerspective(imgs[i], hTranslated,
 			(w, h))
-			cv2.imshow('result'+str(i),result)
-			cv2.imshow('im1',imgs[-1])
-			cv2.imshow('im2',imgs[-2])
+			#cv2.imshow('result'+str(i),result)
+			#cv2.imshow('im1',imgs[-1])
+			#cv2.imshow('im2',imgs[-2])
 
 			#stich them with masking
 			anded = cv2.bitwise_and(result,main)
@@ -78,8 +78,6 @@ class Stitcher:
 			ret,binary = cv2.threshold(gray,1,255,cv2.THRESH_BINARY_INV)
 			binary = cv2.cvtColor(binary,cv2.COLOR_GRAY2RGB)
 			maskedMain = cv2.bitwise_and(main,binary)
-			cv2.imshow('bin',maskedMain)
-
 			main = cv2.bitwise_or(maskedMain,result)
 
 		cv2.imshow('main',main)
